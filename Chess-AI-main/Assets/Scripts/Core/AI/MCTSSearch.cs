@@ -14,12 +14,16 @@
         Move bestMove;
         int bestEval;
         bool abortSearch;
+        const float explorationParameter = 1;
 
         MCTSSettings settings;
         Board board;
         Evaluation evaluation;
 
-        System.Random rand;
+        MCTSNode root;
+        List<MCTSNode> activeNodes;
+        int nSimsCount;
+
 
         // Diagnostics
         public SearchDiagnostics Diagnostics { get; set; }
@@ -31,7 +35,8 @@
             this.settings = settings;
             evaluation = new Evaluation();
             moveGenerator = new MoveGenerator();
-            rand = new System.Random();
+            root = new(null, board, moveGenerator,settings, evaluation);
+            activeNodes = new() { root };
         }
 
         public void StartSearch()
@@ -56,6 +61,7 @@
             }
         }
 
+
         public void EndSearch()
         {
             if (settings.useTimeLimit)
@@ -63,13 +69,34 @@
                 abortSearch = true;
             }
         }
+        MCTSNode Select()
+        {
+            nSimsCount++;
+            (MCTSNode,float) chosen = (null,0);
+            if (activeNodes.Count == 0) throw new Exception("Ran out of nodes to go through");
+            foreach (MCTSNode node in activeNodes)
+            {
+                float value = node.UCB(nSimsCount, explorationParameter);
+                if (chosen.Item1 is null ||chosen.Item2 < value)chosen = (node, value);
+            }
+            return chosen.Item1;
+        }
 
         void SearchMoves()
         {
-            // TODO
-            // Don't forget to end the search once the abortSearch parameter gets set to true.
-
-            throw new NotImplementedException();
+            var moves = root.moveGenerator.GenerateMoves(board, true);
+            while (!abortSearch)
+            {// Don't forget to end the search once the abortSearch parameter gets set to true.
+                MCTSNode selected = Select();
+                selected.Expand();
+                selected.Simulate();
+                selected.BeginBackPropagation();
+                if (root.score == 1)break;//found the win path
+            }
+            for (int i = 0; i < root.children.Count; i++)
+            {
+                if (root.children[i].score == root.score) bestMove = moves[i];
+            }
         }
 
         void LogDebugInfo()
