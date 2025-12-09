@@ -59,6 +59,8 @@ namespace Chess {
 		public float EvaluateSimBoard(SimPiece[,] board, bool team)
 		{
 			int result = 0;
+			//bool OwnKingPresent = false;
+			//bool OppKingPresent = false;
 
 			foreach (SimPiece p in board)
 			{
@@ -67,14 +69,18 @@ namespace Chess {
 					if (p.team == team)
 					{
 						result += p.value;
+						//if (p.type == SimPieceType.King) OwnKingPresent = true;
 					}
 					else
 					{
 						result -= p.value;
-					}
+                        //if (p.type == SimPieceType.King) OppKingPresent = true;
+                    }
 				}
 			}
 
+			//if (!OppKingPresent) return 1;
+			//if(!OwnKingPresent) return 0;
 			return (((float)result / maxBoardValue) + 1) / 2;
 		}
 

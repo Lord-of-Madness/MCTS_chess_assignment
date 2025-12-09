@@ -16,17 +16,17 @@ MonoBehaviour:
   useTimeLimit: 1
   searchTimeMillis: 5000
   endlessSearchMode: 0
-  useBook: 1
+  useBook: 0
   book: {fileID: 4900000, guid: 7473c7aa9594747efb1706cc9c268ef3, type: 3}
   maxBookPly: 10
   promotionsToSearch: 0
   diagnostics:
-    lastCompletedDepth: 3
-    moveVal: Rxh6
-    move: h8-h6
-    eval: -99998
+    lastCompletedDepth: 0
+    moveVal: 
+    move: 
+    eval: 0
     isBook: 0
-    numPositionsEvaluated: 485
+    numPositionsEvaluated: 0
   depth: 10
   useIterativeDeepening: 1
   useTranspositionTable: 1

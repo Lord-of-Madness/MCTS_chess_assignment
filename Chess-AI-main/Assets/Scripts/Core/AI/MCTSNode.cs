@@ -1,25 +1,42 @@
 ﻿namespace Chess
 {
     using System;
-    using System.CodeDom.Compiler;
     using System.Collections.Generic;
-    using System.Linq;
     using UnityEngine;
+
+    using Debug = UnityEngine.Debug;
 
     public class MCTSNode
     {
+        public override string ToString()
+        {
+            return parentMoveName + " - " + (int)(Score*100)+"%" ;//for debug purposes
+        }
+        const float explorationParameter = 1;
         public MCTSNode parent;
-        public float score = float.MaxValue;
+        public float Score
+        {
+            get => nWins / nSimulations;
+        }
         public Board board;
         public List<MCTSNode> children;
         public List<Move> availableMoves;
         public readonly MoveGenerator moveGenerator;
         private readonly MCTSSettings settings;
-        public int nSimulations = 1;//so that we don't divide by zero
-        public int nWins;
+        public int nSimulations = 0;
+        public float nWins = 0;
         private readonly Evaluation evaluation;
-        public float SimValue;//Holds the result of the last Simulation with respect to the player on turn in this state (not the player running the simulation)
-        public MCTSNode(MCTSNode parent, Board board, MoveGenerator moveGenerator, MCTSSettings settings, Evaluation evaluation)
+        private readonly System.Random random;//Unity's Random was getting the code stuck. I couldn't figure out how and why.
+        public string parentMoveName; //for debuging purposes
+        enum Result
+        {
+            StateIsMated,
+            StateIsWon,
+            Stalemate,
+            Playing
+        }
+        Result preresult = Result.Playing;
+        public MCTSNode(MCTSNode parent, Board board, MoveGenerator moveGenerator, MCTSSettings settings, Evaluation evaluation, System.Random random)
         //Makes more sense to have a reference to Settings and evaluation rather than making more objects. Unless we'd like to do some paralel shenanigans that is.
         {
             this.parent = parent;
@@ -27,94 +44,121 @@
             this.moveGenerator = moveGenerator;
             this.settings = settings;
             this.evaluation = evaluation;
+            availableMoves = moveGenerator.GenerateMoves(board, true);
+            bool inCheck = moveGenerator.InCheck();
+            if (availableMoves.Count == 0)
+            {
+                if (inCheck) preresult = Result.StateIsMated;
+                else preresult = Result.Stalemate;
+            }
+            else
+                foreach (var move in availableMoves)
+                {
+                    if (board.KingSquare[1 - board.ColourToMoveIndex] == move.TargetSquare) preresult = Result.StateIsWon;
+                }
+            children = new(availableMoves.Count);
+            this.random = random;
+        }
 
-        }
-        public void BeginBackPropagation()
-        {
-            BackPropagate(SimValue);
-        }
         public void BackPropagate(float score)
         {
-            if (this.score > score)
-            {
-                this.score = score;
-                parent?.BackPropagate(1-score);//parent is other player therefore the SimValue is opposite for him
-            }
-        }
-        void CreateChildren()
-        {
-            availableMoves = moveGenerator.GenerateMoves(board, parent is null);
-            children = new(availableMoves.Count);
-            foreach (Move move in availableMoves)
-            {
-                Board childboard = board.Clone();
-                childboard.MakeMove(move);
-                children.Add(new(this, childboard, moveGenerator, settings, evaluation));
-            }
+            nSimulations++;
+            nWins += score;
+            parent?.BackPropagate(1 - score);
+
         }
         public MCTSNode Expand()
         {
-            availableMoves ??= moveGenerator.GenerateMoves(board, parent is null);
-            if (availableMoves.Count == 0) return null;//TODO: Gotta check and remove parent from open nodes after
-            children ??= new();
+            if (preresult != Result.Playing) return this;// this is an end state. Has no children. Game over
             Board childboard = board.Clone();
-            childboard.MakeMove(availableMoves.Last());
-            MCTSNode childNode = new(this, childboard, moveGenerator, settings, evaluation);
-            children.Add(childNode);
+            childboard.MakeMove(availableMoves[^1]);
+            MCTSNode childNode = new(this, childboard, moveGenerator, settings, evaluation, random)
+            {
+                parentMoveName = availableMoves[^1].Name//for debug purposes
+            };
             availableMoves.RemoveAt(availableMoves.Count - 1);
+            children.Add(childNode);
             return childNode;
 
         }
 
-        public void Simulate()
+        public float Simulate()
         {
-            nSimulations++;
+            if (preresult == Result.StateIsWon) return 1;
+            else if (preresult == Result.StateIsMated)return 0;
+            else if (preresult == Result.Stalemate) return 0.5f;//umm this is a loss for us but also not a win for the other guy sooooo its as good as middleground?
 
-            int depth = 0;
+
             var SimBoard = board.GetLightweightClone();
             bool whiteToMove = board.WhiteToMove;
-            while (settings.playoutDepthLimit > depth)
+            
+
+            
+
+
+            for (int depth = 0; depth < settings.playoutDepthLimit; depth++)
             {
-                List<SimMove> moves = new();
-                for (int i = 0; i < 8; i++)
-                    for (int j = 0; j < 8; j++)
+                List<SimMove> moves = moveGenerator.GetSimMoves(SimBoard, whiteToMove);
+                if (moves.Count == 0) return 0.5f;//Stalemate and thats technically a failure for either) (Oughta check if we aren't in check for that would be a loss)
+                var move = moves[random.Next(moves.Count)];//we pick moves at random
+
+                //bool OwnKingPresent = false;
+                //bool OppKingPresent = false;
+                /*(int, int) OwnKingCoord = (0, 0);
+                (int, int) OppKingCoord = (0, 0);
+                for (int i = 0; i < 8; i++) for (int j = 0; j < 8; j++)
                     {
-                        var piece = SimBoard[j, j];
-                        if (piece is not null && piece.team == whiteToMove)
+                        SimPiece p = SimBoard[i, j];
+                        if (p != null)
                         {
-                            moves.Concat(piece.GetMoves(SimBoard, j, j));
+                            if (p.team == board.WhiteToMove)
+                            {
+                                if (p.type == SimPieceType.King)
+                                {
+                                    //OwnKingPresent = true;
+                                    OwnKingCoord = (i, j);
+                                }
+                            }
+                            else
+                            {
+                                if (p.type == SimPieceType.King)
+                                {
+                                    //OppKingPresent = true;
+                                    OppKingCoord = (i, j);
+                                }
+                            }
                         }
-                    }
-                if(moves.Count == 0)//Cannot do anything
+                    }*/
+                //if (!OppKingPresent) return 1;
+                //if (!OwnKingPresent) return 0;
+                //(int, int) TarKingCoord;
+                //if (board.WhiteToMove == whiteToMove) TarKingCoord = OppKingCoord;
+                //else TarKingCoord = OwnKingCoord;
+                if (moves.Count == 1
+                    && SimBoard[move.endCoord1, move.endCoord2] is not null
+                    && SimBoard[move.endCoord1, move.endCoord2].type == SimPieceType.King)
                 {
-                    if (whiteToMove != board.WhiteToMove) //evaluated with respect to the state we started in
+
+                    if (board.WhiteToMove == whiteToMove)
                     {
-                        nWins++;
-                        SimValue = 1;//Win
+                        return 1;
                     }
-                    else SimValue = 0;//Fail
-                    return;
+                    return 0;
+
+
                 }
-                var move = moves[UnityEngine.Random.Range(0, moves.Count)];//we pick moves at random
-                if (SimBoard[move.endCoord1, move.endCoord2].type == SimPieceType.King)//If we are on turn while opponents is in Check we win (in normal chess its the turn before but this will certainly not pose a problem later (easier to check))
-                {
-                    if (whiteToMove == board.WhiteToMove) //evaluated with respect to the state we started in
-                    {
-                        nWins++;
-                        SimValue = 1;//Win
-                    }
-                    else SimValue = 0;//Fail
-                    return;
-                }
-                depth++;
+
                 whiteToMove = !whiteToMove;
+                SimBoard[move.endCoord1, move.endCoord2] = SimBoard[move.startCoord1, move.startCoord2];
+                SimBoard[move.startCoord1, move.startCoord2] = null;
             }
 
-            SimValue = evaluation.EvaluateSimBoard(SimBoard, board.WhiteToMove);//evaluated with respect to the state we started in
+            return evaluation.EvaluateSimBoard(SimBoard, board.WhiteToMove);//always with respect to the white player
         }
-        public float UCB(int totalSimCount, float c)
+        public float UCB()
         {
-            return nWins / nSimulations + c * Mathf.Sqrt(Mathf.Log(totalSimCount) / nSimulations);
+            //if (nSimulations == 0) return float.PositiveInfinity;//so that we don't divide by zero, also making it preferable //shouldn't ever happen(we don't ask for UCB if we haven't seen the node yet)
+            return 1 - nWins / nSimulations + explorationParameter * Mathf.Sqrt(Mathf.Log(parent.nSimulations) / nSimulations);
         }
     }
 }

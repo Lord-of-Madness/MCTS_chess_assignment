@@ -117,10 +117,11 @@
         /// <summary>
         /// Returns all the simmoves for a given team in a given state. Moves are generated even if
 		/// the game is over, so it can’t be used to check whether the game has finished.
+		/// If a finishing move is possible (one such would take the king), only such move is returned
         /// </summary>
         public List<SimMove> GetSimMoves(SimPiece[,] state, bool team)
 		{
-			var result = new List<SimMove>();
+            List<SimMove> result = new();
 
 			// Go through all the board positions one by one looking for pieces from the
 			// given team and collecting the moves they can make into a list.
